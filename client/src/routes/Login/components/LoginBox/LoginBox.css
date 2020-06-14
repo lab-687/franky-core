@@ -1,0 +1,27 @@
+.box {
+  width: 65%;
+  height: 80%;
+  padding-top: 10%;
+  justify-content: center;
+  align-items: center;
+  margin-left: 17.5%;
+  margin-top: 10%;
+}
+
+.btn-primary, .btn-primary:hover, .btn-primary:active, .btn-primary:visited, .btn-primary:focus {
+  background-color: #999999!important;
+  border-color: #999999!important;
+  width: 100%;
+  font-weight: bold!important;
+}
+
+.text {
+  font-weight: bold;
+  color: #a4c4b6;
+  text-align: center;
+}
+
+.line {
+  margin-top: 5vh;
+  margin-bottom: 5vh;
+}

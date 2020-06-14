@@ -1,0 +1,21 @@
+.row {
+  justify-content: center;
+  align-items: center;
+  background-color: #f3f3f3;
+  height: 100vh;
+}
+
+.login-side {
+  background-color: white;
+  justify-content: center;
+  align-items: center;
+  width: 40%;
+  border-radius: 2vh;
+  height: 80%;
+}
+
+.logo {
+  width: 30%;
+  margin-top: 5%;
+  margin-left: 35%;
+}
