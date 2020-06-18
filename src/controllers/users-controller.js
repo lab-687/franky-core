@@ -1,22 +1,25 @@
 const userRepository = require('../repositories/users-repository');
 const tokenRepository = require('../repositories/token-repository');
 const { validationResult } = require('express-validator');
+const bcrypt = require('bcrypt');
 
 exports.listUsers = async (req, res) => {
   const token = req.headers.authorization;
   const verify = await tokenRepository.verify(token);
-  if(verify.role !== 'admin') res.status(403).send({message: "You don't have access for this."});
+  if(verify.role !== 'admin') return res.status(403).send({message: "You don't have access for this."});
 
   try {
-    const data = await userRepository.list();
-    res.status(200).send(data);
+    const data = await userRepository.list(null,'username email type role');
+    return res.status(200).send(data);
   } catch (e) {
-    res.status(500).send({message: 'Failed on list users'});
+    return res.status(500).send({message: 'Failed on list users'});
   }
 };
 
 exports.createUser = async (req, res) => {
   const {errors} = validationResult(req);
+  var salt = req.body.level;
+  if(!salt) salt = 10;
 
   if(errors.length > 0) {
     return res.status(400).send({errors});
@@ -24,20 +27,32 @@ exports.createUser = async (req, res) => {
     if(req.body.type !== 'anon') {
       return res.status(400).send({message: 'The type needs to be "anon" or "public" '});
     }
+  } else if(req.body.role === 'admin') {
+    const token = req.headers.authorization;
+    const verify = await tokenRepository.verify(token);
+    if(verify.role !== 'admin') return res.status(403).send({message: "You don't have access for this."});
   }
 
-  try {
-    await userRepository.create({
-      username: req.body.username,
-      password: req.body.password,
-      email: req.body.email,
-      type: req.body.type,
-      role: req.body.role
-    });
-    res.status(201).send({message: 'User created'});
-  } catch (e) {
-    res.status(500).send({message: 'Failed on create user'});
-  }
+  console.log(req.body.password);
+
+  bcrypt.hash(req.body.password, salt, async (err, encrypted) => {
+    req.body.password = encrypted;
+    console.log(req.body.password);
+
+    try {
+      await userRepository.create({
+        username: req.body.username,
+        password: req.body.password,
+        email: req.body.email,
+        type: req.body.type,
+        role: req.body.role
+      });
+      return res.status(201).send({message: 'User created'});
+    } catch (e) {
+      return res.status(500).send({message: 'Failed on create user'});
+    }
+  });
+
 };
 
 exports.updateUser = async (req, res) => {
@@ -55,28 +70,28 @@ exports.updateUser = async (req, res) => {
   const verify = await tokenRepository.verify(token);
   if(req.body.role !== verify.role) {
     if(verify.role !== 'admin') {
-        res.status(403).send({message: "You don't have access for this."});
+        return res.status(403).send({message: "You don't have access for this."});
     }
   }
 
   try {
     await userRepository.update(req.params.id, req.body);
-    res.status(200).send({message: 'User updated'});
+    return res.status(200).send({message: 'User updated'});
   } catch (e) {
-    res.status(500).send({message: 'Failed on update user'});
+    return res.status(500).send({message: 'Failed on update user'});
   }
 };
 
 exports.deleteUser = async (req, res) => {
   const token = req.headers.authorization;
   const verify = await tokenRepository.verify(token);
-  if(verify.role !== 'admin') res.status(403).send({message: "You don't have access for this."});
+  if(verify.role !== 'admin') return res.status(403).send({message: "You don't have access for this."});
 
   try {
     await userRepository.delete(req.params.id);
-    res.status(200).send({message: 'User deleted'});
+    return res.status(200).send({message: 'User deleted'});
   } catch (e) {
-    res.status(500).send({message: 'Failed on delete user'});
+    return res.status(500).send({message: 'Failed on delete user'});
   }
 };
 
@@ -94,20 +109,25 @@ exports.loginUser = async (req, res) => {
   var user;
 
   if(req.body.email) {
-      user = await userRepository.list({email: req.body.email, password: req.body.password});
+      user = await userRepository.list({email: req.body.email}, 'password role');
   } else {
-      user = await userRepository.list({username: req.body.username, password: req.body.password});
+      user = await userRepository.list({username: req.body.username}, 'password role');
   }
 
-  if(user.length === 0) res.status(500).send({message: 'Failed on login'});
+  if(user.length === 0) return res.status(500).send({message: 'Failed on login'});
 
-  try {
-    const data = await tokenRepository.create(user[0]._id, user[0].role);
-    res.status(200).send(data);
-  } catch (e) {
-    res.status(500).send({message: 'Failed on login'});
-  }
-
+  bcrypt.compare(req.body.password, user[0].password, async (err, result) => {
+    if(result) {
+      try {
+        const data = await tokenRepository.create(user[0]._id, user[0].role);
+        return res.status(200).send(data);
+      } catch (e) {
+        return res.status(500).send({message: 'Failed on login'});
+      }
+    } else {
+      return res.status(500).send({message: 'Wrong password'});
+    }
+  });
 
 };
 
