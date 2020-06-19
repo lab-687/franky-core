@@ -8,7 +8,13 @@ router.get('/', usersController.verifyLogin, groupsController.listGroups);
 
 router.get('/:id', usersController.verifyLogin, groupsController.GroupDetails);
 
+router.get('/list/user', usersController.verifyLogin, groupsController.findByUser);
+
 router.post('/', usersController.verifyLogin, groupsController.createGroup);
+
+router.post('/add/user', usersController.verifyLogin, groupsController.AddUserToGroup);
+
+router.post('/remove/user', usersController.verifyLogin, groupsController.removeUserFromGroup);
 
 router.put('/:id', usersController.verifyLogin, groupsController.updateGroup);
 

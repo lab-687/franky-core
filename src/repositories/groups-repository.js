@@ -6,10 +6,6 @@ exports.list = async (filter, show) => {
     return res;
 };
 
-exports.findByUser = async (groups) => {
-
-};
-
 exports.create = async data => {
     const user = new Groups(data);
     await user.save();

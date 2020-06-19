@@ -55,7 +55,7 @@ app.use(cors());
 app.use('/', indexRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/environment', environmentRoutes);
-app.use('/api/profile/properties', propertiesRoutes);
+app.use('/api/properties', propertiesRoutes);
 app.use('/api/profile', profilesRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/groups', groupsRoutes);

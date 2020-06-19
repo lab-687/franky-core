@@ -14,10 +14,10 @@ exports.listGroups = async (req, res) => {
 
   try {
     if(verify.role === 'admin') {
-      data = await groupsRepository.list(null,null);
+      data = await groupsRepository.list(null,'name description participants categories');
       return res.status(200).send(data);
     } else {
-      data = await groupsRepository.list({type: 'public'},'name description participants');
+      data = await groupsRepository.list({type: 'public'},'name description participants categories');
       return res.status(200).send(data);
     }
   } catch (e) {
@@ -111,20 +111,13 @@ exports.createGroup = async (req, res) => {
     }
   }
 
-  if(!data[0].hasEvents) {
-    req.body.events = null;
-  } else {
-    //do it later, when events model is ready!
-  }
   if(!error) {
     try {
       await groupsRepository.create({
         name: req.body.name,
         description: req.body.description,
-        stories: req.body.stories,
         categories: req.body.categories,
         participants: req.body.participants,
-        events: req.body.events,
         type: req.body.type
       });
       return res.status(201).send({message: 'Group created.'});
@@ -136,6 +129,60 @@ exports.createGroup = async (req, res) => {
 };
 
 exports.updateGroup = async (req, res) => {
+  var error = false;
+  var data = await environmentRepository.show(null,null);
+  if(!data[0].hasGroups) return res.status(500).send({message: "Your environment do not alow groups"});
+
+  const token = req.headers.authorization;
+  const verify = await tokenRepository.verify(token);
+
+  if(req.body.type !== 'public' && req.body.type !== 'private') return res.status(500).send({message: 'Group type invalid'});
+
+  if(!data[0].hasCategories) {
+    req.body.categories = null;
+  } else {
+    if(req.body.categories.length > 0) {
+       promises = req.body.categories.map(async (category) => {
+        var categoryExists = await categoriesRepository.list({name: category}, null);
+        if(categoryExists.length === 0) {
+          error = true;
+          return res.status(500).send({message: 'You are trying to send an invalid category.'});
+        }
+      });
+      await Promise.all(promises);
+    }
+  }
+
+  if(!error) {
+    try {
+      if(verify.role === 'admin') {
+        await groupsRepository.update(req.params.id,req.body);
+        return res.status(200).send({message: 'Group updated'});
+      } else {
+        data = await groupsRepository.list({_id: req.params.id}, null);
+        var foundUser = false;
+        var promises = data[0].participants.map(async (participant) => {
+          if(participant.userId === verify.id) {
+            if(participant.role === 'leader') {
+              foundUser = true;
+            }
+          }
+        });
+        await Promise.all(promises);
+        if(foundUser) {
+          await groupsRepository.update(req.params.id,req.body);
+          return res.status(200).send({message: 'Group updated'});
+        } else {
+          return res.status(500).send({message: 'You need to be a leader to upgrade the group'});
+        }
+      }
+    } catch(e) {
+        return res.status(500).send({message: 'Failed on upgrade group'});
+    }
+  }
+};
+
+exports.deleteGroup = async (req, res) => {
   var data = await environmentRepository.show(null,null);
   if(!data[0].hasGroups) return res.status(500).send({message: "Your environment do not alow groups"});
 
@@ -144,27 +191,149 @@ exports.updateGroup = async (req, res) => {
 
   try {
     if(verify.role === 'admin') {
-      data = await groupsRepository.update(req.params.id,null);
-      return res.status(200).send(data[0]);
+      await groupsRepository.delete(req.params.id);
+      return res.status(200).send({message: 'Group deleted'});
     } else {
       data = await groupsRepository.list({_id: req.params.id}, null);
       var foundUser = false;
       var promises = data[0].participants.map(async (participant) => {
-        if(participant.userId === verify.id) foundUser = true;
+        if(participant.userId === verify.id) {
+          if(participant.role === 'leader') {
+            foundUser = true;
+          }
+        }
       });
       await Promise.all(promises);
       if(foundUser) {
-        return res.status(200).send(data[0]);
+        await groupsRepository.delete(req.params.id);
+        return res.status(200).send({message: 'Group deleted'});
       } else {
-        return res.status(500).send({message: 'You need to be a participant to see the details of this group'});
+        return res.status(500).send({message: 'You need to be a leader to delete the group'});
       }
     }
   } catch(e) {
-      return res.status(500).send({message: 'Failed on get group details'});
+      return res.status(500).send({message: 'Failed on delete group'});
   }
+
 };
 
-exports.deleteGroup = async (req, res) => {
+exports.findByUser = async (req, res) => {
   var data = await environmentRepository.show(null,null);
   if(!data[0].hasGroups) return res.status(500).send({message: "Your environment do not alow groups"});
+
+  const token = req.headers.authorization;
+  const verify = await tokenRepository.verify(token);
+
+  try {
+      var groups = []
+      data = await groupsRepository.list(null, 'name description participants categories');
+      var promises = data.map(async (group) => {
+
+        var id = group.participants.find(participant => {
+          return participant.userId === verify.id
+        });
+        if(id !== undefined) groups.push(group);
+      });
+      await Promise.all(promises);
+      return res.status(200).send(groups);
+
+  } catch(e) {
+      return res.status(500).send({message: 'Failed on delete group'});
+  }
+
+};
+
+exports.AddUserToGroup = async (req, res) => {
+  var data = await environmentRepository.show(null,null);
+  if(!data[0].hasGroups) return res.status(500).send({message: "Your environment do not alow groups"});
+
+  const token = req.headers.authorization;
+  const verify = await tokenRepository.verify(token);
+
+  try {
+    data = await groupsRepository.list({_id: req.body.groupId}, null);
+
+    if(data.length === 0) return res.status(500).send({message: "Group not found"});
+
+    var self = data[0].participants.find(participant => {
+      return participant.userId === verify.id
+    });
+
+    var participant = data[0].participants.find(participant => {
+      return participant.userId === req.body.userId
+    });
+
+    if(verify.role === 'admin' || (self !== undefined && self.role === 'leader') ) {
+      if(participant === undefined) {
+        data[0].participants.push({role: "participant", userId: req.body.userId});
+        await groupsRepository.update(req.body.groupId,data[0]);
+        return res.status(201).send({message: "user added to the group"});
+      } else {
+        return res.status(500).send({message: "user already is a participant"});
+      }
+    } else if(self === undefined) {
+      if(req.body.userId !== verify.id) {
+        return res.status(500).send({message: "You dont have permission to add someone else"});
+      } else {
+        data[0].participants.push({role: "participant", userId: verify.id});
+        await groupsRepository.update(req.body.groupId,data[0]);
+        return res.status(201).send({message: "user added to the group"});
+      }
+    } else {
+      return res.status(500).send({message: "failed on add user to the group"});
+    }
+  } catch(e) {
+    return res.status(500).send({message: "failed on add user to the group"});
+  }
+
+};
+
+exports.removeUserFromGroup = async (req, res) => {
+
+  var data = await environmentRepository.show(null,null);
+  if(!data[0].hasGroups) return res.status(500).send({message: "Your environment do not alow groups"});
+
+  const token = req.headers.authorization;
+  const verify = await tokenRepository.verify(token);
+
+  try {
+    data = await groupsRepository.list({_id: req.body.groupId}, null);
+
+    if(data.length === 0) return res.status(500).send({message: "Group not found"});
+
+    var self = data[0].participants.find(participant => {
+      return participant.userId === verify.id
+    });
+
+    var participant = data[0].participants.find(participant => {
+      return participant.userId === req.body.userId
+    });
+
+    if(verify.role === 'admin' || (self !== undefined && self.role === 'leader') ) {
+      if(participant === undefined) {
+        return res.status(500).send({message: "user not found"});
+      } else {
+        data[0].participants = data[0].participants.filter(participant => {
+          return participant.userId !== req.body.userId
+        });
+        await groupsRepository.update(req.body.groupId, data[0]);
+        return res.status(200).send({message: 'user removed from the group'});
+      }
+    } else if(self === undefined) {
+      return res.status(500).send({message: "user not found"});
+    } else {
+      if(verify.id === req.body.userId) {
+        data[0].participants = data[0].participants.filter(participant => {
+          return participant.userId !== verify.id
+        });
+        await groupsRepository.update(req.body.groupId, data[0]);
+        return res.status(200).send({message: 'user removed from the group'});
+      } else {
+        return res.status(500).send({message: "You dont have permission to remove someone else"});
+      }
+    }
+  } catch(e) {
+    return res.status(500).send({message: "failed on remove user to the group"});
+  }
+
 };
